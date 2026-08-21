@@ -1,0 +1,262 @@
+---
+name: git-commit-convention
+description: Enforce Git commit standards before every commit. Use this skill whenever you are about to run `git commit`, need to write a commit message, stage files, or perform any Git commit operation. Triggers on: "commit", "git commit", "提交", "stage and commit", "commit my changes", or any task that ends with committing code. Always consult this skill before writing any commit message — do not commit without following these steps.
+---
+
+# Git Commit Convention Skill
+
+This skill ensures every commit follows the project's Conventional Commits standard with correct author identity, proper history analysis, and clean atomic changesets.
+
+---
+
+## Author Identity (Always Set First)
+
+Before any git operation, ensure the correct author is configured:
+
+```bash
+git config user.name "qianmoQ"
+git config user.email "shicheng@devlive.org"
+```
+
+> Run this at the start of every commit workflow. Use local config (no `--global`) to avoid affecting other repos.
+
+---
+
+## Mandatory Pre-Commit Workflow
+
+Execute these steps **in order** before every commit:
+
+### Step 1 — Read Commit History
+
+```bash
+git log --oneline -10
+```
+
+Analyze the output to understand:
+- The project's **type/scope** patterns actually in use
+- **Granularity**: how much goes into one commit
+- **Subject phrasing style**: verb tense, capitalization, length
+- Which **scopes** are already established
+
+> Never skip this step. Your commit must feel native to this repo's history.
+
+### Step 2 — Inspect the Diff
+
+```bash
+git diff --stat
+git diff --cached --stat   # if files are already staged
+```
+
+Determine:
+- Which **type** fits (`feat`, `fix`, `refactor`, `chore`, etc.)
+- Which **scope** matches the changed modules
+- Whether the changes form **one logical unit** or need to be split
+
+### Step 3 — Check for Unstaged Files
+
+```bash
+git status
+```
+
+Ensure nothing is accidentally omitted or mixed in.
+
+### Step 4 — Stage Atomically
+
+Stage files by **logical unit**, not by directory or "all at once":
+
+```bash
+# Good: targeted staging
+git add src/dock/LayoutEngine.swift tests/DockLayoutTests.swift
+
+# Avoid unless the entire diff is one logical change
+git add .
+```
+
+If the diff contains multiple unrelated changes, split them into separate commits.
+
+### Step 5 — Write the Commit Message
+
+Follow the format and rules in the next section, then:
+
+```bash
+git commit -m "<type>(<scope>): <subject>"
+# or for multi-line:
+git commit
+```
+
+---
+
+## Commit Message Format
+
+```
+<type>(<scope>): <subject>
+
+[optional body]
+
+[optional footer]
+```
+
+### Rules
+
+| Rule | Requirement |
+|------|-------------|
+| Language | **English only** — no Chinese in commit messages |
+| Type & scope | All lowercase |
+| Subject | Starts with lowercase verb in **imperative mood** (`add`, `fix`, `update`) — no past tense (`added`), no third person (`adds`) |
+| Subject length | Header line ≤ 72 characters total |
+| Body lines | ≤ 100 characters each |
+| Body separator | Blank line between header and body |
+| Period | No trailing period on subject |
+
+### Types
+
+| Type | Use for |
+|------|---------|
+| `feat` | New feature |
+| `fix` | Bug fix |
+| `perf` | Performance improvement |
+| `refactor` | Code restructure with no behavior change |
+| `test` | Adding or updating tests |
+| `docs` | Documentation only |
+| `chore` | Build, tooling, dependency updates |
+| `style` | Formatting, whitespace (no logic change) |
+| `i18n` | Internationalization / localization |
+| `ci` | CI/CD config changes |
+
+### Common Scopes
+
+Use scopes that match the actual project modules. Check `git log` for established scopes. Examples:
+```
+dock-engine, workspace, system-monitor, search,
+theme-engine, context-menu, settings, i18n,
+persistence, accessibility, hotkey, update
+```
+
+---
+
+## Commit Message Examples
+
+**Single-line feature:**
+```
+feat(dock-engine): add multi-row layout calculation
+```
+
+**Feature with body:**
+```
+feat(dock-engine): add multi-row layout with configurable columns
+
+- implement calculateIconFrame(index:columns:iconSize:) for grid positioning
+- support up to 4 rows with automatic column wrapping
+- overlay window repositions on screen configuration change
+
+Closes #12
+```
+
+**Bug fix:**
+```
+fix(dock-engine): prevent icon flicker when external display connects
+
+The overlay window was being recreated on every
+NSApplication.didChangeScreenParametersNotification, causing a
+brief flash. Now diffs existing windows against new screen list.
+
+Fixes #47
+```
+
+**Refactor:**
+```
+refactor(workspace): extract SpacesIntegration into dedicated type
+```
+
+**i18n:**
+```
+i18n(ja): add Japanese translations for settings and error messages
+```
+
+**Dependency/tooling:**
+```
+chore: upgrade KeyboardShortcuts to 2.2.0
+```
+
+---
+
+## Hard Prohibitions
+
+These must **never** appear in any commit message:
+
+```
+# AI / tool attribution
+Co-Authored-By: Claude <claude@anthropic.com>
+Generated by Claude
+🤖 Generated with Claude
+
+# Chinese text
+feat: 实现多行 Dock 布局
+
+# Meaningless messages
+fix: fix bug
+update code
+wip
+temp commit
+
+# Overly broad
+feat: add many new features
+refactor: clean up code
+
+# Wrong tense
+feat(dock): added multi-row layout    ← past tense ❌
+feat(dock): adds multi-row layout     ← third person ❌
+feat(dock): add multi-row layout      ← imperative ✅
+
+# Absolute paths
+feat: add layout in /Users/john/Desktop/...
+```
+
+---
+
+## Commit Granularity
+
+**One commit = one complete logical change.**
+
+```
+✅ Correct granularity:
+commit 1: feat(i18n): add Localizable.strings foundation with en/zh-Hans keys
+commit 2: i18n(zh-Hant): add Traditional Chinese translations
+commit 3: i18n(ja): add Japanese translations
+commit 4: test(i18n): add coverage for all supported language keys
+
+❌ Too coarse (multiple concerns in one commit):
+feat: add i18n support and workspace manager and fix dock bug
+
+❌ Too granular (meaningless split):
+add Localizable.strings
+add zh-Hans/Localizable.strings
+update DockSectionView.swift
+```
+
+---
+
+## Branch Naming Reference
+
+| Type | Format | Example |
+|------|--------|---------|
+| Feature | `feature/{kebab-case}` | `feature/dock-multi-row-layout` |
+| Fix | `fix/{kebab-case}` | `fix/icon-flicker-display-change` |
+| Release | `release/{semver}` | `release/1.0.0` |
+| Hotfix | `hotfix/{kebab-case}` | `hotfix/crash-on-m4-mac` |
+| i18n | `i18n/{lang-or-desc}` | `i18n/ja-translation` |
+
+---
+
+## Quick Checklist
+
+Before confirming the commit, verify:
+
+- [ ] `git config user.name` → `qianmoQ`
+- [ ] `git config user.email` → `shicheng@devlive.org`
+- [ ] Reviewed last 10 commits with `git log --oneline -10`
+- [ ] Type and scope match the diff and repo history
+- [ ] Subject uses imperative mood, all English, ≤ 72 chars
+- [ ] No AI attribution, no Chinese, no vague messages
+- [ ] Staged files form exactly one logical change
+- [ ] Body added if the change needs explanation (optional but recommended for non-trivial commits)
