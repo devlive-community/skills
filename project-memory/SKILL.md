@@ -1,148 +1,180 @@
 ---
 name: project-memory
-description: Persist user habits, preferences, project conventions, and every completed feature in the current project's .claude/ directory so Claude Code remembers them across sessions. Use whenever the user says "记住", "记一下", "记到记忆里", "永久记忆", "别忘了", "下次也这样", "这是我的习惯/规范", or asks to remember something, and after completing or modifying a feature, making a technical decision, or discovering a project convention. Store each feature in a separate file and review existing project memory before starting new work.
+description: Persist user habits, preferences, project conventions, technical decisions, and every completed feature in the current project's .claude/ directory so Claude Code remembers them across sessions and the team can see them in git. Use whenever the user says "记住", "记一下", "记到记忆里", "永久记忆", "别忘了", "下次也这样", "以后都这样", "这是我的习惯/规范", "remember this", or asks to remember or forget something; after completing, changing, or removing a feature; after making a technical decision or discovering a project convention; and before starting new work, to recall existing memory. Store each feature in a separate file, keep always-loaded memory small, and never store memory only in machine-local auto memory.
 ---
 
 # Project Memory
 
-Persist information worth retaining in the current project's `.claude/` directory so Claude Code automatically remembers it the next time the project is opened.
+Persist information worth keeping in the current project's `.claude/` directory, so Claude Code loads it automatically the next time the project is opened and the team can see it in git.
 
 ## Why `.claude/`
 
-Claude Code automatically loads `./CLAUDE.md` or `./.claude/CLAUDE.md` from the project root. These files can use `@relative-path` syntax to import other files inline. Relative paths are resolved from the directory containing `CLAUDE.md`, with up to five levels of nesting.
+Claude Code automatically loads `./CLAUDE.md` and `./.claude/CLAUDE.md` from the project root. These files can pull in other files with `@relative/path` imports. Paths resolve relative to the importing file, and imports can nest up to five levels deep.
 
-Memory takes effect automatically in the next session only when it is stored in this `CLAUDE.md`-imported structure. An arbitrary file elsewhere will not be loaded. Machine-local auto memory under `~/.claude/projects/...` does not travel with the repository, cannot be committed, and is not visible to the team, so it does not satisfy the requirement for permanent project memory. This skill always writes to the project's `.claude/` directory.
+Memory only loads in the next session when it is reachable through that import chain. A file anywhere else is ignored. Machine-local auto memory under `~/.claude/projects/...` does not travel with the repository and cannot be committed or shared, so it does **not** satisfy a "permanent project memory" request. This skill always writes to the project's `.claude/`. Do not duplicate the same items into auto memory, because two sources drift apart.
 
 ## Directory Structure
 
-Maintain this structure under the project root, creating it when necessary:
-
 ```text
 project/.claude/
-├── CLAUDE.md                 # Memory entry point; imports always-loaded memory
+├── CLAUDE.md                 # Entry point: imports always-loaded memory
 └── memory/
-    ├── preferences.md        # User habits and preferences
-    ├── conventions.md        # Project conventions
-    ├── decisions.md          # Important technical decisions and rationale; optional
+    ├── preferences.md        # User habits and preferences (always loaded)
+    ├── conventions.md        # Project conventions (always loaded)
+    ├── decisions.md          # Major cross-feature decisions (optional; read on demand)
     └── features/
-        ├── INDEX.md          # Lightweight, always-loaded feature index
-        ├── <feature-name>.md # One file per feature
-        └── ...
+        ├── INDEX.md          # One row per feature (always loaded)
+        └── <feature-slug>.md # One file per feature (read on demand)
 ```
 
-Import `preferences.md`, `conventions.md`, and `features/INDEX.md` so they are always loaded. Do not import individual feature files. Read them only when relevant, using the index, so accumulated feature details do not consume the entire context window.
+Only `preferences.md`, `conventions.md`, and `features/INDEX.md` are imported. Feature files and `decisions.md` are read when a task touches them, so accumulated detail never floods the context window.
 
-## First-Time Initialization
+## Setup and Health Check
 
-1. Identify the project root: usually the level containing `.git`, `package.json`, `Cargo.toml`, or `src/`.
-2. If `.claude/CLAUDE.md` does not exist, create it from the template below. If it exists, do not overwrite it; append only missing import lines.
-3. Create `.claude/memory/`, `preferences.md`, `conventions.md`, and `features/INDEX.md` using the templates below. Empty placeholders are acceptable initially.
-4. Run `date +%F` and use its output for timestamps. Never invent a date.
+The bundled script lives in this skill's directory (usually `~/.claude/skills/project-memory`):
 
-Use this `.claude/CLAUDE.md` entry-point template:
-
-```markdown
-# Project Memory Entry Point
-
-> This file is maintained by project-memory and loaded automatically by Claude Code.
-> Do not remove the import lines below. Append imports here for any new always-loaded memory.
-
-## Always-Loaded Memory
-- User habits and preferences: @memory/preferences.md
-- Project conventions: @memory/conventions.md
-- Feature memory index: @memory/features/INDEX.md
-
-Detailed feature memory is stored in `memory/features/<feature-name>.md`. Read it when needed using the index above.
+```bash
+bash ~/.claude/skills/project-memory/scripts/memory.sh init    # create missing files; never overwrites
+bash ~/.claude/skills/project-memory/scripts/memory.sh check   # imports, index sync, git-ignore, size, secrets
 ```
 
-`@` imports are not resolved inside code blocks or inline code. Import lines in the actual entry-point file must be ordinary Markdown text without backticks.
+The project root defaults to the git top level. Pass a path as the second argument for a nested package that the user wants to keep separate memory for.
+
+`init` creates the entry point, templated `preferences.md` and `conventions.md`, and an empty `features/INDEX.md`. If `.claude/CLAUDE.md` already exists, it only appends missing import lines. An existing root `CLAUDE.md` is left untouched, since both files load.
+
+Run `check` after writing memory. It reports:
+
+- missing or backtick-wrapped imports (`@` imports are **not** resolved inside inline code or code blocks);
+- feature files without an index row, and index rows without a file;
+- always-loaded memory over about 400 lines;
+- text that looks like a secret;
+- memory files that `.gitignore` excludes.
+
+**If memory is git-ignored** (many projects ignore all of `.claude/`), memory silently stops being shared. Tell the user, and propose narrowing the rule instead of deleting it:
+
+```gitignore
+.claude/*
+!.claude/CLAUDE.md
+!.claude/memory/
+```
+
+Keep `.claude/settings.local.json` ignored.
 
 ## Route Each Memory Item
 
-Store information in the most appropriate file rather than putting everything in one place:
+| What | Where | Examples |
+|------|-------|----------|
+| How the user likes to work | `memory/preferences.md` | Reply in Simplified Chinese; deliver end to end with few questions; concise answers; preferred model or tool |
+| Rules for this repository | `memory/conventions.md` | Commit format and author, directory layout, naming, tech choices, lint/CI gates, prohibited patterns |
+| How a feature is built | `memory/features/<slug>.md` | Authentication, token usage stats, multi-cloud storage adapter |
+| Major cross-feature trade-off | `memory/decisions.md` | Picking SQLite over JSON files for all storage; dropping Windows 7 support |
 
-- **User habit or personal preference** → `memory/preferences.md`
-  Examples: prefers Simplified Chinese replies, English commit messages without AI attribution, end-to-end delegation with fewer questions, DeepSeek for code generation, or concise communication.
-- **Project-wide convention or team rule** → `memory/conventions.md`
-  Examples: Conventional Commits, directory structure, naming rules, technology choices, lint or CI requirements, and prohibited patterns.
-- **Feature implementation memory** → `memory/features/<feature-name>.md`
-  Examples: user authentication, token usage statistics, diet recommendations, or a multi-cloud storage adapter. Keep one feature per file.
-- **Important technical decision and rationale** → `memory/decisions.md`
-  Use this only for major cross-feature trade-offs. Otherwise, record the rationale in the relevant feature file.
+Tie-breakers:
 
-When uncertain, route personal information to `preferences.md`, repository-specific working rules to `conventions.md`, and implementation details to a feature file.
+- If a rule is about **the code or repository** (anyone contributing must follow it), it goes in `conventions.md`, even when the user states it as a personal habit. Commit rules are conventions.
+- If it is about **how Claude should interact with the user**, it goes in `preferences.md`.
+- If it only matters for one feature, put it in that feature's file, including the rationale, instead of `decisions.md`.
+- If the user says the rule applies to **all projects**, record it here and also mention once that `~/.claude/CLAUDE.md` is the place for truly global instructions. Do not edit that file without being asked.
+
+## What Not to Record
+
+- Secrets, tokens, passwords, private URLs, or customer data. Memory is committed and shared.
+- Anything the code, `git log`, or README already states plainly: dependency lists, directory trees, change history.
+- Temporary task state ("currently fixing X", "next step: Y"). Use a todo list or the conversation instead.
+- Guesses. Record what was decided or verified, not what you assume.
+- Relative dates. Convert "next Friday" to an absolute date.
 
 ## Record a Feature
 
-After completing or significantly modifying a feature:
+After completing, significantly changing, or removing a feature:
 
-1. Choose a kebab-case filename such as `user-authentication.md`, `token-usage-stats.md`, or `diet-recommendation.md`. Keep one feature per file.
-2. Write or update `memory/features/<feature-name>.md` using the feature template.
-3. Add or update its row in `memory/features/INDEX.md` so a later session can locate it quickly.
-4. If the feature file already exists, update it in place: merge the current implementation, remove obsolete details, and refresh the date.
+1. Choose a stable kebab-case slug that matches how the codebase names the feature (`user-authentication`, `token-usage-stats`). If a file already exists for this feature, reuse it rather than creating a near-duplicate.
+2. Write or update `memory/features/<slug>.md` from the template below. When updating, merge in the current state, delete obsolete details, and refresh the date. Do not append a changelog.
+3. Add or update the feature's row in `features/INDEX.md`, keeping its summary to one line.
+4. **Renamed feature:** rename the file and update the index row. **Removed feature:** delete the file and the row. Keep any lesson that still applies by moving it to `conventions.md` or `decisions.md`.
+5. Run `memory.sh check`.
 
 Feature file template:
 
 ```markdown
-# Feature: <display name> (<feature-slug>)
+# Feature: <Display Name> (<feature-slug>)
 
 ## Overview
-In one or two sentences, explain what the feature does and which problem it solves.
+One or two sentences: what it does and which problem it solves.
 
 ## Key Implementation
-- Technology / dependencies:
-- Core files and locations:
+- Entry points / core files: `path/to/file.ts` (`FunctionName`)
 - Data flow / architecture:
+- Storage / external APIs:
 
 ## Conventions and Caveats
-- Special conventions:
-- Known pitfalls / edge cases:
+- Rules specific to this feature:
+- Known pitfalls and edge cases:
 
 ## Related Decisions
-- Rationale and trade-offs:
+- Why it is built this way and what was rejected:
 
 _Last updated: <YYYY-MM-DD>_
 ```
 
-`features/INDEX.md` template:
+Refer to code by file path and symbol name, not line numbers, which go stale quickly.
+
+`features/INDEX.md` row format:
 
 ```markdown
-# Feature Memory Index
-
-> Add or update one row whenever a feature is completed or modified. See the linked file for details.
-
 | Feature | File | Summary | Updated |
 |---------|------|---------|---------|
-| User authentication | user-authentication.md | JWT with refresh tokens | 2026-07-31 |
+| User authentication | user-authentication.md | JWT access + refresh tokens, stored in keychain | 2026-07-31 |
 ```
+
+## Record a Decision
+
+Append to `memory/decisions.md`, newest first:
+
+```markdown
+## <YYYY-MM-DD> — <Decision title>
+- **Context:** what forced the choice
+- **Decision:** what was chosen
+- **Alternatives rejected:** and why
+- **Consequences:** what this commits the project to
+```
+
+When a decision is reversed, mark the old entry `Superseded by <date>` instead of deleting it.
 
 ## Writing Rules
 
-- **Read before writing.** Inspect the target file first, then update or merge instead of blindly appending. Avoid duplicates and contradictions. Do not repeat an existing preference unless it has changed.
-- **Explicit memory requests are mandatory.** When the user says "记住", "记一下", "记到记忆里", "永久记忆", "别忘了", or otherwise explicitly asks to remember something, write it immediately to the appropriate file and confirm the write. Do not merely promise in chat.
-- **Keep memory concise and actionable.** Record conventions, preferences, pitfalls, and rationale that will be useful next time. Do not copy large directory trees or dependency lists that are already obvious from the code.
-- **Use real timestamps.** Run `date +%F`; do not invent dates.
-- **Keep the entry point valid.** When adding a new category of always-loaded memory, add its import to `.claude/CLAUDE.md`. Do not import individual feature files; list them in `features/INDEX.md`.
-- **Assume memory is committable.** Project memory is meant to travel with the repository and be shared with the team. If the user says an item is private and must not be committed, store it under `.claude/memory/`, add that specific file to the project's `.gitignore`, and tell the user.
+- **Explicit requests are mandatory and immediate.** When the user says "记住", "记一下", "别忘了", or otherwise asks to remember something, write it to the right file in the same turn and confirm the exact file and wording. Do not just promise to remember.
+- **Read before writing.** Read the target file first. Update or merge instead of blindly appending. Remove duplicates and contradictions. When a preference changes, replace the old line instead of keeping both.
+- **Forget on request.** When the user says "忘掉", "不用记了", or "forget X", delete the item and confirm.
+- **Keep it short and actionable.** Write one bullet per rule and phrase it as an instruction ("Use pnpm, never npm"). Keep always-loaded files well under 400 lines combined and move detail into feature files.
+- **Use real dates.** Run `date +%F`; never invent a date.
+- **Keep the entry point valid.** Add an import line when you introduce a new always-loaded file. Never import individual feature files.
+- **Private items:** if the user says an item must not be committed, put it in `.claude/memory/private.md`, import it from the entry point, add that exact path to `.gitignore`, and tell the user.
+
+## Committing Memory
+
+Memory files are ordinary project files. Commit them only when the user asked for commits or the active workflow includes them, and always through the **git-commit-convention** skill.
+
+- Follow the repository's established pattern. Without one, keep memory out of the feature commit and commit it separately, for example `docs(memory): record token usage stats feature`.
+- A memory-only change for an explicit "记住" request does not need a commit unless the user asks for one. Mention that the change is uncommitted.
 
 ## Recall Before Starting Work
 
-Before beginning a new task, use existing memory:
-
-- Always-loaded memory in `preferences.md`, `conventions.md`, and `features/INDEX.md` should already be available. Align the work with it.
-- If the task involves an indexed feature, locate and read its `features/<feature-name>.md` file before changing the implementation.
-- If memory conflicts with the current code, confirm the discrepancy with the user before updating the memory to match.
+- The always-loaded files should already be in context. Follow them, because they carry the same weight as the project's own instructions.
+- If the task touches an indexed feature, read its feature file before changing code. Read `decisions.md` before reversing an architectural choice.
+- If memory conflicts with the current code, trust the code for facts. Confirm with the user before changing a rule, then update the memory so the conflict does not recur.
+- To confirm what is loaded, the user can run `/memory` in Claude Code.
 
 ## Examples
 
 **User:** "以后提交信息一律用英文，作者 qianmoQ，不要带 AI 署名，记住。"
-
-**Action:** Update the commit conventions section in `memory/conventions.md` with English-only commits, author `qianmoQ`, and no AI attribution. Run `date +%F` for the update date, then confirm the write.
-
-**User:** "刚做完的这个 Token 用量统计功能记一下。"
-
-**Action:** Create `memory/features/token-usage-stats.md` from the feature template and add a row to `features/INDEX.md`, then confirm the files written.
+**Action:** These are repository rules, so update the "Git and Commits" section of `memory/conventions.md`: English-only Conventional Commits, author `qianmoQ <shicheng@devlive.org>`, no AI attribution trailers. Refresh the date and confirm the file and lines written.
 
 **User:** "我喜欢你直接给结果，别问一堆问题。"
+**Action:** This is how the user wants Claude to interact, so add "Deliver end to end; ask only when a decision is genuinely the user's" under Workflow in `memory/preferences.md`, then confirm.
 
-**Action:** Record the preference for direct delivery and fewer follow-up questions in `memory/preferences.md`, including the current date.
+**User:** "刚做完的这个 Token 用量统计功能记一下。"
+**Action:** Read the implementation, create `memory/features/token-usage-stats.md` from the template, add its row to `features/INDEX.md`, run `memory.sh check`, and report the files written.
+
+**User:** "旧的导出功能删掉了，记忆也清一下。"
+**Action:** Delete `memory/features/legacy-export.md` and its index row. Move any still-relevant pitfall to `conventions.md`, then run `memory.sh check`.
