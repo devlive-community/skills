@@ -1,0 +1,28 @@
+# Path rules for .ci/changed-components.sh
+#
+#   <component>: <pattern> [<pattern> ...]    one CI job per component
+#   _all:    <pattern> ...                    any match forces a full run
+#   _ignore: <pattern> ...                    never triggers anything
+#   !<pattern>                                exclude from that component
+#
+# "**/" matches zero or more directories; "*" matches anything including "/".
+# A pattern may appear under several components (shared inputs).
+# Long lines may continue with a trailing backslash.
+
+# CI wiring: changing how CI runs re-runs everything.
+_all: .github/workflows/ci.yml .ci/** .gitlab-ci.yml
+
+# Never trigger a build.
+_ignore: **/*.md docs/** LICENSE* .editorconfig .gitattributes .github/ISSUE_TEMPLATE/** \
+         .github/*.md .vscode/** .idea/**
+
+java: backend/** **/pom.xml .mvn/** mvnw mvnw.cmd \
+      proto/**
+
+rust: **/*.rs **/Cargo.toml Cargo.lock rust-toolchain rust-toolchain.toml .cargo/**
+
+python: **/*.py pyproject.toml uv.lock requirements*.txt .python-version \
+        proto/**
+
+web: web/** .nvmrc \
+     !web/**/*.png
